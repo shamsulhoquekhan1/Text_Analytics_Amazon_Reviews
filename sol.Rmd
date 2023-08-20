@@ -1,0 +1,391 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+We are working with actual reviews from Amazon in the Magazine Subscriptions category. 
+For this assignment, we are working with only the first 2500 online reviews in the original
+“magazine_reviews.RDS” data set. 
+
+
+
+```{r}
+library(tidyverse)
+library(readr)
+
+reviews <- read_rds("magazine_reviews.RDS")
+reviews <- reviews[1:2500,]
+head(reviews)
+```
+
+# 1. Explore the data
+
+```{r}
+# Calculate the count of missing values in each column of the 'reviews' dataset
+colSums(is.na(reviews))
+
+# Create a bar plot for the 'overall' column in the 'reviews' dataset
+ggplot(reviews, aes(x = overall)) + geom_bar() + theme_minimal()
+
+# Create a bar plot for the 'vote' column in the 'reviews' dataset
+ggplot(reviews, aes(x = vote)) + geom_bar() + theme_minimal()
+
+# Create a data frame with column names and their corresponding missing value count
+missing_values <- data.frame(
+  column = names(reviews),
+  missing_count = colSums(is.na(reviews))
+)
+
+# Create a bar plot showing the count of missing values for each column in the 'reviews' dataset
+ggplot(missing_values, aes(x = column, y = missing_count)) +
+  geom_col() +
+  theme_minimal() +
+  labs(title = "Missing values count for each column")
+
+
+```
+
+
+
+
+An analysis of missing values in each column reveals that most columns are complete, with only vote, style, and image containing missing data.
+The distribution of ratings in the overall bar chart shows a majority of 5-star reviews.
+The vote bar chart indicates that most reviews have either zero votes or a minimal number of votes.
+The verified bar chart demonstrates that the bulk of reviews come from verified purchases.
+
+
+# 2. Data cleaning and pre-processing
+
+
+```{r}
+# Load required libraries
+library(tm)
+library(textstem)
+
+# Create an unprocessed corpus from the 'reviewText' column of the 'reviews' dataset
+unprocessed_corpus <- VCorpus(VectorSource(reviews$reviewText))
+
+# Create a term-document matrix from the unprocessed corpus
+tdm <- TermDocumentMatrix(unprocessed_corpus)
+
+# Calculate word frequencies and store them in a data frame
+word_freq <- rowSums(as.matrix(tdm))
+word_freq <- data.frame(word = names(word_freq), freq = word_freq)
+
+```
+
+
+```{r}
+# Sort word frequencies in descending order
+word_freq_sorted <- word_freq[order(-word_freq$freq),]
+
+# Set the number of top words to be displayed
+top_n_words <- 20
+
+# Create a bar plot for the top n most frequent words in the unprocessed text
+ggplot(word_freq_sorted[1:top_n_words,], aes(x = reorder(word, -freq), y = freq)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = paste("Top", top_n_words, "Most Frequent Words unprocessed"))
+
+
+
+```
+
+
+Here we can see the most frequent words are "the", "and", "for", etc. We don't think these words 
+are meaningful to our analysis.
+We believe some of these words are already included in the stopwords() function, so we will
+add few words along with the stop words in order to have only the words that are meaningful to our 
+analysis. The additional words are: "magazine", "magazines", "add", "every", "amazon","I","card", 
+"really", "also","The", 'the', "A",'a', "This",'this',"It",'it',"i", "on","us","can","get".
+
+We will also turn the words in lower case, and remove numbers,punctuations, and white space 
+to have a clean data to work with.
+
+
+
+```{r}
+
+
+# Create a corpus from the 'reviewText' column of the 'reviews' dataset
+
+corpus <- VCorpus(VectorSource(reviews$reviewText))
+
+# Preprocess the corpus by applying various text transformations
+
+corpus <- tm_map(corpus, content_transformer(tolower))  # Convert text to lowercase
+corpus <- tm_map(corpus, removeNumbers)               # Remove numbers
+corpus <- tm_map(corpus, removePunctuation)            # Remove punctuation
+
+# Define additional stopwords to be removed from the corpus
+
+additional_stopwords <- c("magazine", "magazines", "add", "every", "amazon","I","card", "really", "also","The", 'the', "A",'a', "This",'this',"It",'it',"i", "on","us","can","get")
+custom_stopwords <- c(stopwords("en"), additional_stopwords) 
+
+corpus <- tm_map(corpus, removeWords, custom_stopwords) # Remove stopwords
+
+corpus <- tm_map(corpus, stripWhitespace)         # Remove extra whitespace
+
+
+
+```
+
+
+
+```{r}
+# Create a term-document matrix from the preprocessed corpus
+tdm <- TermDocumentMatrix(corpus)
+
+# Calculate word frequencies and store them in a data frame
+word_freq <- rowSums(as.matrix(tdm))
+word_freq <- data.frame(word = names(word_freq), freq = word_freq)
+
+```
+
+
+```{r}
+# Sort word frequencies in descending order
+word_freq_sorted <- word_freq[order(-word_freq$freq),]
+
+# Set the number of top words to be displayed
+top_n_words <- 20
+
+# Create a bar plot for the top n most frequent words in the preprocessed text
+ggplot(word_freq_sorted[1:top_n_words,], aes(x = reorder(word, -freq), y = freq)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = paste("Top", top_n_words, "Most Frequent Words"))
+
+
+
+```
+
+We can see that the most frequent words changed by a lot, giving more insight that
+we are looking for in our analysis. For example, previously the top 3 words were
+"the", "and", and "for", which are replaced by "great", "good", and "articles".
+Now it is easier for us to run process such as Sentiment analysis and so on. 
+
+For our next step, we are going to perform lemmatization to reduce words to their
+lemma form so that different inflected forms of a word can be analyzed as a 
+single term.
+
+```{r}
+# Apply lemmatization to the preprocessed corpus
+corpus <- tm_map(corpus, content_transformer(lemmatize_strings))
+
+# Create a term-document matrix from the lemmatized corpus
+tdm <- TermDocumentMatrix(corpus)
+
+# Calculate word frequencies and store them in a data frame
+word_freq <- rowSums(as.matrix(tdm))
+word_freq <- data.frame(word = names(word_freq), freq = word_freq)
+
+```
+
+
+```{r}
+# Sort word frequencies in descending order
+word_freq_sorted <- word_freq[order(-word_freq$freq),]
+
+# Set the number of top words to be displayed
+top_n_words <- 20
+
+# Create a bar plot for the top n most frequent words in the lemmatized text
+ggplot(word_freq_sorted[1:top_n_words,], aes(x = reorder(word, -freq), y = freq)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = paste("Top", top_n_words, "Most Frequent Words"))
+
+
+```
+
+After lemmatization, we can see that there has been a small change in the frequency of
+words. Some words disappeared and some words become more/less frequent than others.
+For example, the words "dont" and "ads" disappeared and words such as "issue" became
+more frequent. We believe this will help us to represent the data more accurately.
+For example, lemmatization helps in reducing noise and redundancy in the text by 
+collapsing multiple inflections of the same word into a single base form. This 
+can improve the performance of machine learning models and other text analysis 
+algorithms. It also enhances readability and Interpretability.
+
+
+# 3. Sentiment analysis
+
+To perform Sentiment analysis with negative bias, we will do the following:
+
+1) Tokenize review text: Break down each review into individual words, also known as tokens. 
+This process helps in analyzing the sentiment of each word within the context of the review.
+
+2) Assign sentiment labels: Use a sentiment lexicon (a predefined list of words with 
+associated sentiment labels) to label the words as positive or negative based on their meaning.
+The lexicon helps identify the sentiment of individual words within the review text.
+
+3) Apply weights considering negativity bias: In the given problem statement, there's a 
+negativity bias, meaning negative words have a stronger impact on sentiment than positive words.
+To account for this, we assign a weight of 1 to positive words and a weight of 2 to negative words.
+
+4) Calculate sentiment scores for each review: For each review, compute the sentiment score using 
+the weighted positive and negative word counts. The formula used is:
+(Weighted Positive Count - Weighted Negative Count) / (Weighted Positive Count + Weighted Negative Count).
+This formula normalizes the sentiment score to a range between -1 and 1, where negative values indicate
+negative sentiment, positive values indicate positive sentiment, and values close to 0 represent neutral 
+or mixed sentiment.
+
+By following this process, we can analyze the sentiment of each review while considering the negativity 
+bias and obtain a normalized sentiment score that reflects the overall sentiment of the review.
+
+
+
+
+```{r}
+# Pre-processing and creating cleaned_text
+cleaned_text <- data.frame(
+  reviewerID = reviews$reviewerID,
+  reviewText = sapply(corpus, as.character),
+  stringsAsFactors = FALSE
+)
+
+# Load required libraries
+library(tidytext)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# Tokenize words
+cleaned_tokens <- cleaned_text %>%
+  unnest_tokens(word, reviewText)
+
+# Get sentiment labels
+sentiment <- cleaned_tokens %>%
+  inner_join(get_sentiments("bing"))
+
+# Apply negativity bias by assigning weights to positive and negative sentiment words
+sentiment_weighted <- sentiment %>%
+  mutate(weight = ifelse(sentiment == "negative", 2, 1))
+
+# Count the sentiment words with their respective weights for each reviewerID
+sentiment_counts <- sentiment_weighted %>%
+  count(reviewerID, sentiment, wt = weight, sort = TRUE)
+
+# Calculate sentiment scores considering the negativity bias
+sentiment_scores <- sentiment_counts %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sent_score = (positive - negative) / (positive + negative)) %>%
+  select(reviewerID, sent_score)
+
+# Plot sentiment scores with negativity bias
+ggplot(sentiment_scores, aes(x = reviewerID, y = sent_score, fill = factor(sent_score > 0, labels = c("negative", "positive")))) +
+  geom_col() +
+  theme_minimal() +
+  labs(x = "Reviewer ID", y = "Sentiment score", fill = "Sentiment") +
+  theme(axis.text.x = element_blank()) +
+  ggtitle("Sentiment Analysis with Negativity Bias")
+
+# Violin plot of sentiment scores with negativity bias
+ggplot(sentiment_scores, aes(x = "", y = sent_score)) +
+  geom_violin(fill = "steelblue", alpha = 0.8) +
+  theme_minimal() +
+  labs(x = "", y = "Sentiment Score") +
+  ggtitle("Sentiment Analysis with Negativity Bias: Violin Plot of Sentiment Scores")
+
+```
+
+
+Sentiment analysis was conducted using the Bing lexicon and factoring in a negativity bias, which doubled the importance of negative sentiment counts relative to positive ones.
+The resulting visualizations illustrates visualization of the distribution of sentiment scores considering the negativity bias. The results are mostly positive in regard to the observed dataset. Both plots show that the reviewers are mostly 
+positive even though the customers of this product category are having serious negative bias.
+
+# 4. Topic modeling
+
+```{r}
+library(tidytext)
+library(topicmodels)
+library(slam)
+
+
+corpus_dtm <- DocumentTermMatrix(corpus)
+
+# Remove empty documents from the DTM
+non_empty_docs <- row_sums(corpus_dtm) > 0
+corpus_dtm <- corpus_dtm[non_empty_docs, ]
+
+# Number of topics to try out
+numTopics <- c(2:10)
+
+# Create an empty table to store perplexity scores
+per_score <- data.frame(k = numTopics, # numbers of topics
+                        per_score = 0)
+
+# Run a for loop to re-run the LDA model with different k
+for (k in numTopics) {
+  lda_results <- LDA(corpus_dtm,
+                     k = k,
+                     control = list(seed = 123))
+  per_score$per_score[per_score$k == k] <- perplexity(lda_results)
+}
+
+# Print the table
+per_score
+
+```
+
+```{r}
+plot(x = per_score$k,
+y = per_score$per_score,
+type = "b")
+```
+
+
+We have used perplexity score to determine the number of topics for our model. 
+We know for large data set, the more topic we choose, the lower the score becomes.
+So to address this, we created a “scree” plot and found the
+“elbow” of the plot where the decrease in the perplexity scores is leveled off.
+We found from the plot that 6 is the number of topics that we should go for.
+Also from the per_score table, we can see that the perplexity scores are not 
+decreasing that much after they pass 6 number of topics.
+
+
+
+```{r}
+# Create the LDA model with 7 topics
+best_model_6 <- LDA(corpus_dtm, k = 6)
+
+# Tidy the model
+topic_word_probs <- tidy(best_model_6, matrix = "beta")
+
+# Generate topic labels
+topic_labels <- topic_word_probs %>%
+  group_by(topic) %>%
+  top_n(8, beta) %>%
+  arrange(topic, -beta) %>%
+  summarize(label = paste(term, collapse = ", ")) %>%
+  ungroup()
+
+topic_labels
+
+```
+
+The cleaned data was used to fit an LDA model with 6 topics, testing a range of topic numbers from 2 to 10. The optimal LDA model was selected based on the per_score table and "scree" plot by finding a point where the decrease in the perplexity scores is leveled off, indicating the best model fit. The most representative words for each topic were determined, facilitating the labeling of topics. The topic_labels data frame contains the identified topic labels generated by the best-performing LDA model.
+
+
+We can label the topics in the following way:
+
+Based on the top words in each topic, you can assign labels that best represent the theme of each topic. Here are suggested labels for the six topics:
+
+1) Topic 1 - "Beauty & Lifestyle": Words like love, great, good, article, allure, read, glamour, and beauty suggest a theme around beauty, fashion, and lifestyle.
+
+2) Topic 2 - "Tech & Reviews": Words like good, computer, review, read, like, great, maximum, and article indicate a theme related to technology, gadgets, and product reviews.
+
+3) Topic 3 - "Projects & Ideas": Words like good, great, project, idea, lot, tip, read, and many suggest a theme around creative projects, ideas, and tips.
+
+4) Topic 4 - "Reading & E-books": Words like read, kindle, good, mag, subscription, love, just, and like indicate a theme related to reading, e-books, and digital magazines.
+
+5) Topic 5 - "Subscription & Delivery": Words like subscription, issue, receive, year, order, first, get, and will suggest a theme around magazine subscriptions and delivery issues.
+
+6) Topic 6 - "Men's Health & Lifestyle": Words like article, health, like, read, men's, good, page, and man indicate a theme related to men's health, fitness, and lifestyle.
+
+These labels provide a high-level understanding of the themes present in each topic, making it easier to interpret the results of your LDA topic modeling.
